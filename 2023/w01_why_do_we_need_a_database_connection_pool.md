@@ -1,4 +1,4 @@
-# Why do we need a Database Connection Pool? -every programmer must know
+# 为什么我们需要一个数据库连接池？—— 每个程序员的必修课
 
 - 原文地址：<https://medium.com/javarevisited/why-do-we-need-a-database-connection-pool-every-programmer-must-know-9f90e7c8e5af>
 - 原文作者：Dineshchandgr
@@ -6,23 +6,23 @@
 - 译者：[pseudoyu](https://github.com/pseudoyu)
 - 校对：[小超人](https://github.com/focozz)
 
-Hello everyone. In this article, we are going to look at Database connections and their life cycle. Then we will look at the [Connection Pool](https://javarevisited.blogspot.com/2012/06/jdbc-database-connection-pool-in-spring.html), its internals, and why we need to use it. Then we will look at the design patterns on where to place the connection pool. We will then look at the performance issues that can arise from the Database connection pool and conclude the article by looking at the common connection pool frameworks used in Java. Let's get started.
+大家好，通过这篇文章我们将了解数据库连接和它们的生命周期。然后，我们将看看[连接池](https://javarevisited.blogspot.com/2012/06/jdbc-database-connection-pool-in-spring.html)的内部结构，以及为什么我们需要使用它；然后，我们将了解连接池位置的设计模式；接着，我们将探究数据库连接池可能产生的性能问题，并在文章的最后学习 Java 中常用的连接池框架。
 
 ![with_connection_pool](../static/images/2023/w01_why_do_we_need_a_database_connection_pool/with_connection_pool.webp)
 
-## What is a Database Connection
+## 什么是数据库连接
 
-Any software application needs to store the data in a database and for the application to interact with a **database server**, we need a Database Connection. The **Database connection** is nothing but a way for the application software to interact with the database server software and we use the connection to send **commands (SQL) to the database** and obtain the response from the database in the form of a [Result Set](http://www.java67.com/2018/01/jdbc-how-to-get-row-and-column-count-from-resultset-java.html).
+任何软件程序都需要将数据存储在数据库中，为了使应用程序与**数据库服务器**交互，我们需要数据库连接。**数据库连接**只是软件程序与数据库服务交互的一种方式，我们通过数据库连接向数据库发送**命令（SQL）**，并以[结果集]（<http://www.java67.com/2018/01/jdbc-how-to-get-row-and-column-count-from-resultset-java.html>）的形式从数据库获得响应。
 
 ![what_is_database](../static/images/2023/w01_why_do_we_need_a_database_connection_pool/what_is_connection_database.webp)
 
-The database application usually runs in a **dedicated server** called a **database server** which is different from the application servers. The database application runs in a specific port in the database server on which the application server can send commands and receive the data. Eg: [MySQL database](https://medium.com/javarevisited/top-5-courses-to-learn-mysql-in-2020-4ffada70656f) application runs in a default port called 3306 in the database server machine. This is exactly the same way as the backend application running in port 8080.
+与应用服务器不同，数据库程序通常运行在专用**数据库服务器**中。数据库程序运行在数据库服务器的一个特定端口，应用程序服务器可以通过这个端口发送命令和接收数据。例如：[MySQL 数据库](https://medium.com/javarevisited/top-5-courses-to-learn-mysql-in-2020-4ffada70656f)程序在数据库服务器上运行 3306 默认端口，这与后端应用程序运行在 8080 端口的方式完全相同。
 
-Whenever a client like a browser or mobile requests data from the backend application, the backend application needs to talk to the database to retrieve the data and respond to the client.
+每当像浏览器或手机这样的客户端向后端应用程序请求数据时，后端应用程序需要与数据库交互以获取数据并响应客户端。
 
-If a backend application wants to connect to the database server application, it needs to make a call over [TCP-IP protocol](https://medium.com/javarevisited/5-best-books-and-courses-to-learn-computer-networking-tcp-ip-and-udp-protocols-5a0e4dce75fa) along with the **database server IP and Port** info and the credentials to connect. The process of the application server connecting to the database server to obtain data is achieved through a mechanism called **Database Connection**.
+如果一个后端应用程序想要连接到数据库服务器程序，它需要通过 [TCP-IP 协议](https://medium.com/javarevisited/5-best-books-and-courses-to-learn-computer-networking-tcp-ip-and-udp-protocols-5a0e4dce75fa)进行调用，并需要提供**数据库服务器的 IP 和端口**信息以及连接的证书。应用服务器连接到数据库服务器以获取数据的过程是通过一个叫做**数据库连接**的机制实现的。
 
-To build a Database connection, we need to provide the information like server URL that contains the host, port and the name of the database, driver, user name, and password as shown below
+要建立一个数据库连接，我们需要提供数据库 URL（包含主机、端口、数据库名称） 驱动程序、用户名和密码等信息，如下所示
 
 ```yaml
 db_url      = jdbc:mysql://HOST/DATABASE
@@ -31,24 +31,24 @@ db_username = USERNAME
 db_password = PASSWORD
 ```
 
-Once a connection to the Database is created, it can be opened and closed at any time and we can even set the timeout for them.
+一旦创建了与数据库的连接，它可以在任何时候被打开和关闭，我们也可以配置超时时间等。
 
-Without an open connection, communication with the [database](https://medium.com/javarevisited/8-free-oracle-database-and-sql-courses-for-beginners-f4e9b25b33c4) cannot be done. Creating a Database connection is an expensive operation as there are a lot of steps involved. How we handle the database connection could make or break the entire application and it could even bring the entire application to stand still.
+如果没有开放的连接，就不能与[数据库](https://medium.com/javarevisited/8-free-oracle-database-and-sql-courses-for-beginners-f4e9b25b33c4)进行通信。创建数据库连接是一项昂贵的操作，因为涉及很多步骤。我们对数据库连接的操作可能会破坏应用程序，甚至使整个应用程序中断。
 
-## Life Cycle of a Database Connection
+## 数据库连接的生命周期
 
-Having seen in detail about the database connection above, lets us look at the **life cycle of a connection** i.e steps involved in creating a connection to the database from the application server
+在详细了解了上述数据库连接后，我们来看看连接的**生命周期**，即通过应用服务器创建与数据库连接的各个环节
 
 ![connectionlifecycle](../static/images/2023/w01_why_do_we_need_a_database_connection_pool/connectionlifecycle.webp)
 
-1. **Opening connection** to the database using the Connection String
-2. **Authenticating user credentials** provided in the Connection String before establishing the connection
-3. **Creating and opening a TCP socket** for reading/writing data
-4. **Sending/receiving data** over the socket
-5. Closing the **database connection**
-6. Closing the **TCP socket**
+1. 通过连接配置字符串与数据库**创建连接**
+2. 在建立连接前通过连接配置字符串中的信息对用户身份进行鉴权
+3. **创建并打开一个 TCP Socket** 用于读/写数据
+4. **通过 Socket 发送/接收数据**
+5. 关闭**数据库连接**
+6. 关闭**TCP Socket**
 
-Creating a connection with the database system with the number of steps involved is an expensive and time-consuming operation and if you create a **connection on the fly**, the **application will hang** and users will be experiencing slowness in the page loading. Moreover, if your application has a large scale of users and if you open a connection for every request, the number of simultaneous connections increases which in turn increases the **CPU and memory resources** which is very dangerous.
+与数据库系统建立连接的步骤很多，是一个昂贵而耗时的操作。如果你建立的是一个**实时连接**，**应用程序将挂起**，用户也将遇到页面加载缓慢的情况。此外，如果你的应用程序有大规模的用户，而你为每个请求打开一个连接，同时连接的数量就会增加，这反过来又会增加**CPU 和内存资源消耗**，非常危险。
 
 That is the reason we have **Connection Pools** by which we don't create new connections every time but reuse the existing connections. Without a connection pool, a **new database connection** is created for each client.
 
